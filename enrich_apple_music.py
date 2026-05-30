@@ -284,7 +284,7 @@ def main():
 
         # Known absent
         if any(k.lower() in artist_raw.lower() for k in KNOWN_ABSENT):
-            enriched.append((artist_raw, album_raw, album_url, rating, summary, date, False, None))
+            enriched.append((artist_raw, album_raw, album_url, rating, summary, date, False, None, ""))
             print(f"  - {artist_raw} — {album_raw}: known absent")
             continue
 
@@ -292,7 +292,7 @@ def main():
         if cache_key in cache:
             c = cache[cache_key]
             enriched.append((artist_raw, album_raw, album_url, rating, summary, date,
-                           c.get("available", False), c.get("badges")))
+                           c.get("available", False), c.get("badges"), c.get("url", "")))
             status = "✓" if c.get("available") else "✗"
             badge_str = ""
             if c.get("badges"):
@@ -303,7 +303,7 @@ def main():
             continue
 
         if cache_only:
-            enriched.append((artist_raw, album_raw, album_url, rating, summary, date, False, None))
+            enriched.append((artist_raw, album_raw, album_url, rating, summary, date, False, None, ""))
             print(f"  ? {artist_raw} — {album_raw}: skipped (cache-only)")
             continue
 
@@ -311,7 +311,7 @@ def main():
         best = search_itunes_multi(artist_raw, album_raw)
         if not best:
             cache[cache_key] = {"available": False}
-            enriched.append((artist_raw, album_raw, album_url, rating, summary, date, False, None))
+            enriched.append((artist_raw, album_raw, album_url, rating, summary, date, False, None, ""))
             print(f"  ✗ {artist_raw} — {album_raw}: no match found")
             continue
 
@@ -336,8 +336,9 @@ def main():
         else:
             time.sleep(0.5)
 
-        cache[cache_key] = {"available": available, "badges": badges}
-        enriched.append((artist_raw, album_raw, album_url, rating, summary, date, available, badges))
+        am_url = best["url"]
+        cache[cache_key] = {"available": available, "badges": badges, "url": am_url}
+        enriched.append((artist_raw, album_raw, album_url, rating, summary, date, available, badges, am_url))
 
         badge_str = ""
         if badges:
@@ -393,7 +394,7 @@ def main():
     lines.append("    <tbody>")
 
     for entry in enriched:
-        artist, album, album_url, rating, summary, date, available, badges = entry
+        artist, album, album_url, rating, summary, date, available, badges, am_url = entry
         rating_class = f"rating-{min(int(float(rating)), 10)}"
         artist_esc = h(artist, quote=False)
         album_esc = h(album, quote=False)
@@ -417,10 +418,11 @@ def main():
                 parts.append('<span class="am-lossless">Lossless</span>')
             if badges.get("hiResLossless"):
                 parts.append('<span class="am-lossless">Hi-Res</span>')
-            if parts:
-                am_html = " · ".join(parts)
+            badge_text = " · ".join(parts) if parts else '<span class="am-available">Available</span>'
+            if am_url:
+                am_html = f'<a href="{h(am_url, quote=True)}" target="_blank" rel="noopener" style="text-decoration:none;">{badge_text}</a>'
             else:
-                am_html = '<span class="am-available">Available</span>'
+                am_html = badge_text
         else:
             am_html = '<span class="am-available">Available</span>'
 
