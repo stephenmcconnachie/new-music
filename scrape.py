@@ -271,12 +271,22 @@ def append_html(output_path: Path, new_entries: list[dict]):
     return output_path
 
 
+def find_last_page(html: str) -> int:
+    """Find the highest page number from pagination links."""
+    pages = set()
+    # Look for p=N in pagination links
+    for m in re.finditer(r'[?&]p=(\d+)', html):
+        pages.add(int(m.group(1)))
+    return max(pages) if pages else 1
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Scrape anydecentmusic.com for new albums")
     parser.add_argument("--output", help="Output HTML file path")
     parser.add_argument("--reset", action="store_true", help="Reset seen state")
     parser.add_argument("--min-rating", type=int, default=7, help="Minimum rating (default: 7)")
+    parser.add_argument("--max-pages", type=int, default=99, help="Max pages to fetch (default: all)")
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else DEFAULT_OUTPUT
@@ -286,20 +296,47 @@ def main():
         print("✓ Seen state reset")
         return
 
-    # Fetch page
-    print("Fetching anydecentmusic.com...")
-    try:
-        html = fetch_page("https://anydecentmusic.com/")
-    except Exception as e:
-        print(f"✗ Failed to fetch: {e}")
-        sys.exit(1)
+    # Fetch pages with pagination
+    BASE_URL = "https://anydecentmusic.com/?time=1"
+    page = 1
+    all_albums = []
+    last_page = None
 
-    # Parse
-    albums = parse_albums(html)
-    print(f"  Found {len(albums)} total album entries")
+    while page <= (last_page if last_page else (args.max_pages if args.max_pages else 1)):
+        url = BASE_URL if page == 1 else f"{BASE_URL}&p={page}"
+        print(f"Fetching page {page}...")
+        try:
+            html = fetch_page(url)
+        except Exception as e:
+            print(f"  ✗ Failed: {e}")
+            break
+
+        # Check for last page on first fetch
+        if last_page is None:
+            last_page = min(find_last_page(html), args.max_pages)
+            print(f"  {last_page} total pages")
+
+        albums = parse_albums(html)
+        print(f"  Found {len(albums)} albums")
+        all_albums.extend(albums)
+
+        if page >= last_page:
+            break
+        page += 1
+
+    # Flatten and dedup by key (later pages may overlap with earlier)
+    seen_keys = set()
+    unique_albums = []
+    for a in all_albums:
+        key = album_key(a)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique_albums.append(a)
+
+    print(f"\n  {len(unique_albums)} unique albums across all pages")
 
     # Filter by rating
-    high_rated = [a for a in albums if a["rating"] >= args.min_rating]
+    high_rated = [a for a in unique_albums if a["rating"] >= args.min_rating]
     print(f"  {len(high_rated)} with rating >= {args.min_rating}")
 
     if not high_rated:
