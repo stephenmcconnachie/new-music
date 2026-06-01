@@ -14,8 +14,21 @@ from html import unescape
 from pathlib import Path
 
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+REMOVED_FILE = SCRIPT_DIR / "removed.json"
+
 KNOWN_ABSENT = []
 KNOWN_ABSENT_KEYS = set(KA.lower() for KA in KNOWN_ABSENT)
+
+
+def load_removed():
+    """Load previously-removed album keys (from remove-albums.py)."""
+    if REMOVED_FILE.exists():
+        try:
+            return set(json.loads(REMOVED_FILE.read_text()))
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return set()
 
 
 def _osa(script, timeout=30):
@@ -394,6 +407,8 @@ def main():
     args = parser.parse_args()
     html_path = args.html_path
 
+    removed_keys = load_removed()
+
     html = open(html_path).read()
     rows = re.findall(
         r'<tr[^>]*>.*?<td><strong>(.*?)</strong></td>.*?<td>(?:<a[^>]*>)?<em>(.*?)</em>(?:</a>)?</td>.*?'
@@ -415,6 +430,13 @@ def main():
         if key in KNOWN_ABSENT_KEYS:
             print(f"• {artist} — {album}")
             print(f"  → Skipped (known absent from Apple Music)")
+            stats["skipped"] += 1
+            continue
+
+        # Check against previously removed
+        if key in removed_keys:
+            print(f"• {artist} — {album}")
+            print(f"  → Skipped (previously removed via remove-albums.py)")
             stats["skipped"] += 1
             continue
 
